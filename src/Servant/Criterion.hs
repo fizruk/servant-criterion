@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -24,8 +25,11 @@ import Servant
 data T a = L a | B (T a) (T a)
 
 data a :-> b = a :-> b
+  deriving (Show)
+infixr 4 :->
 
 data NoInput = NoInput
+  deriving (Show)
 
 -- | A type for all inputs to a multi-function.
 --
@@ -42,22 +46,22 @@ type family Inputs a where
 -- ReturnTypes IO (Int -> (String :<|> (Char -> IO Bool))) :: T *
 -- = 'B ('L [Char]) ('L (IO Bool))
 type family ReturnTypes mf where
-  ReturnTypes (a :<|> b)  = B (ReturnTypes a) (ReturnTypes b)
+  ReturnTypes (a :<|> b)  = 'B (ReturnTypes a) (ReturnTypes b)
   ReturnTypes (a -> b)    = ReturnTypes b
-  ReturnTypes a           = L a
+  ReturnTypes a           = 'L a
 
 type family EndpointsT api where
-  EndpointsT (a :<|> b) = B (EndpointsT a) (EndpointsT b)
+  EndpointsT (a :<|> b) = 'B (EndpointsT a) (EndpointsT b)
   EndpointsT (a :> b) = PrependParam a (EndpointsT b)
-  EndpointsT a = L a
+  EndpointsT a = 'L a
 
 type family PrependParam param api where
-  PrependParam param (B a b) = B (PrependParam param a) (PrependParam param b)
-  PrependParam param (L a) = L (param :> a)
+  PrependParam param ('B a b) = 'B (PrependParam param a) (PrependParam param b)
+  PrependParam param ('L a) = 'L (param :> a)
 
 type family All c xs :: Constraint where
-  All c (B a b) = (All c a, All c b)
-  All c (L a) = c a
+  All c ('B a b) = (All c a, All c b)
+  All c ('L a) = c a
 
 class ApplyInputs api mf where
   applyInputs
@@ -70,7 +74,7 @@ class ApplyInputs api mf where
     -> Inputs mf
     -> m
 
-instance EndpointsT endpoint ~ L endpoint => ApplyInputs endpoint (Handler a) where
+instance {-# OVERLAPPABLE #-} (EndpointsT endpoint ~ 'L endpoint, Inputs a ~ NoInput, ReturnTypes a ~ 'L a) => ApplyInputs endpoint a where
   applyInputs api _ _ f server NoInput = f api server
 
 instance ApplyInputs endpoint api => ApplyInputs endpoint (param -> api) where
@@ -86,15 +90,58 @@ instance Unconstrained endpoint
 class NFDataHandler h where nfHandler :: h -> Benchmarkable
 instance NFData a => NFDataHandler (Handler a) where nfHandler = nfIO . runHandler
 
-benchHandlers ::
+benchmarkableHandlers ::
   ( All Unconstrained (EndpointsT api)
   , All NFDataHandler (ReturnTypes server)
   , ApplyInputs api server
-  ) => Proxy api -> server -> Inputs server -> [Benchmark]
-benchHandlers api = applyInputs api (Proxy @NFDataHandler) (Proxy @Unconstrained) f
+  ) => Proxy api -> server -> Inputs server -> [Benchmarkable]
+benchmarkableHandlers api = applyInputs api (Proxy @NFDataHandler) (Proxy @Unconstrained) f
   where
-    f _endpoint handler = [bench "endpoint" (nfHandler handler)]
+    f _endpoint handler = [nfHandler handler]
+
+class (a ~ Link) => IsLink a
+instance IsLink Link
+
+linkURIs ::
+  ( All Unconstrained (EndpointsT api)
+  , All IsLink (ReturnTypes (MkLink api))
+  , HasLink api
+  , ApplyInputs api (MkLink api)
+  ) => Proxy api -> Inputs (MkLink api) -> [URI]
+linkURIs api = applyInputs api (Proxy @IsLink) (Proxy @Unconstrained) f (allLinks api)
+  where
+    f _endpoint link = [linkURI link]
+
+-- | Run benchmarks for server handlers (one benchmark per API endpoint).
+--
+-- This relies on 'HasLink' to generate benchmark names.
+benchHandlers ::
+  ( HasLink api
+  , All Unconstrained (EndpointsT api)
+  , All NFDataHandler (ReturnTypes (Server api))
+  , All IsLink (ReturnTypes (MkLink api))
+  , ApplyInputs api (Server api)
+  , ApplyInputs api (MkLink api)
+  , Inputs (Server api) ~ Inputs (MkLink api)
+  ) => Proxy api -> Server api -> Inputs (Server api) -> [Benchmark]
+benchHandlers api server inputs = zipWith bench names benchmarkables
+  where
+    names = map show (linkURIs api inputs)
+    benchmarkables = benchmarkableHandlers api server inputs
 
 -- these should be in servant-server
 deriving instance Generic ServantErr
 instance NFData ServantErr
+instance NFData NoContent
+
+-- this is present in later servant
+allLinks
+    :: forall api. HasLink api
+    => Proxy api
+    -> MkLink api
+allLinks api = toLink api (safeLink (Proxy @(Get '[JSON] NoContent))(Proxy @(Get '[JSON] NoContent)))
+
+-- this is present in later servant
+instance (HasLink a, HasLink b) => HasLink (a :<|> b) where
+  type MkLink (a :<|> b) = MkLink a :<|> MkLink b
+  toLink _ l = toLink (Proxy :: Proxy a) l :<|> toLink (Proxy :: Proxy b) l
