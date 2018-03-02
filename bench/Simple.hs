@@ -7,17 +7,20 @@ import Criterion.Main
 import Servant
 import Servant.Criterion
 
-type SampleAPI
+-- | This is an API we want to benchmark.
+type SimpleAPI
     = "test" :> QueryParam "param" Int :> Get '[JSON] String
- :<|> "example" :> Capture ":id" Int :> Delete '[JSON] NoContent
+ :<|> "example" :> Capture ":id" String :> Delete '[JSON] NoContent
 
-sampleServer :: Server SampleAPI
-sampleServer = (return . show) :<|> (\_ -> return NoContent)
+-- | These is the server handler implementations for 'SimpleAPI'.
+simpleServer :: Server SimpleAPI
+simpleServer = (return . show) :<|> (\_ -> return NoContent)
 
-sampleInputs :: Inputs (Server SampleAPI)
-sampleInputs
-    = (Just 123 :-> NoInput)
- :<|> (98723 :-> NoInput)
+-- | These are the inputs we're going to use for the benchmark below.
+simpleInputs :: Inputs (Server SimpleAPI)
+simpleInputs
+    = (Just 256 :-> NoInput)
+ :<|> ("dead-beef" :-> NoInput)
 
 -- | Benchmark servant-server handlers automatically with servant-criterion.
 --
@@ -26,21 +29,21 @@ sampleInputs
 -- @
 -- Running 1 benchmarks...
 -- Benchmark simple: RUNNING...
--- benchmarking test?param=123
--- time                 28.83 ns   (28.15 ns .. 29.77 ns)
---                      0.991 R²   (0.986 R² .. 0.995 R²)
--- mean                 30.24 ns   (29.33 ns .. 31.28 ns)
--- std dev              3.190 ns   (2.597 ns .. 3.900 ns)
+-- benchmarking test?param=256
+-- time                 30.29 ns   (28.86 ns .. 31.77 ns)
+--                      0.988 R²   (0.983 R² .. 0.994 R²)
+-- mean                 30.16 ns   (29.33 ns .. 31.28 ns)
+-- std dev              3.103 ns   (2.615 ns .. 3.797 ns)
 -- variance introduced by outliers: 92% (severely inflated)
 --
--- benchmarking example/98723
--- time                 441.6 ps   (429.7 ps .. 452.6 ps)
---                      0.994 R²   (0.992 R² .. 0.996 R²)
--- mean                 444.6 ps   (432.6 ps .. 460.9 ps)
--- std dev              44.46 ps   (35.03 ps .. 62.24 ps)
--- variance introduced by outliers: 93% (severely inflated)
+-- benchmarking example/dead-beef
+-- time                 445.1 ps   (433.5 ps .. 457.6 ps)
+--                      0.995 R²   (0.993 R² .. 0.997 R²)
+-- mean                 458.6 ps   (446.9 ps .. 473.8 ps)
+-- std dev              40.96 ps   (31.65 ps .. 51.34 ps)
+-- variance introduced by outliers: 92% (severely inflated)
 --
 -- Benchmark simple: FINISH
 -- @
 main :: IO ()
-main = defaultMain $ benchHandlers (Proxy @SampleAPI) sampleServer sampleInputs
+main = defaultMain $ benchHandlers (Proxy @SimpleAPI) simpleServer simpleInputs
