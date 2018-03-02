@@ -1,0 +1,3 @@
+:set -XDataKinds
+:set -XTypeOperators
+:set -XTypeApplications
