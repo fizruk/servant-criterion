@@ -1,5 +1,5 @@
 name:                servant-criterion
-version:             0.1
+version:             0.1.0
 github:              "fizruk/servant-criterion"
 license:             BSD3
 author:              "Nickolay Kudasov"
@@ -21,6 +21,11 @@ description:         Please see the README on Github at <https://github.com/fizr
 
 dependencies:
 - base >= 4.7 && < 5
+- criterion
+- deepseq
+- servant
+- servant-server
+- text
 
 library:
   source-dirs: src
