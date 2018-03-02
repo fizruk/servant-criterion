@@ -19,6 +19,8 @@ category:            Web
 # common to point users to the README.md file.
 description:         Please see the README on Github at <https://github.com/fizruk/servant-criterion#readme>
 
+ghc-options: -Wall
+
 dependencies:
 - base >= 4.7 && < 5
 - criterion
@@ -29,3 +31,11 @@ dependencies:
 
 library:
   source-dirs: src
+
+benchmarks:
+  simple:
+    source-dirs: bench/
+    main: Simple.hs
+    dependencies:
+    - servant-criterion
+
